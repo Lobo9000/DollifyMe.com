@@ -1,42 +1,83 @@
 import React, { useState } from "react";
+import axios from "axios";
 
 export default function App() {
-  const [image, setImage] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [generatedUrl, setGeneratedUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  function handleImageUpload(e) {
+  async function handleImageUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
-    setImage(file);
-    setPreviewUrl(URL.createObjectURL(file));
 
-    setTimeout(() => {
-      setGeneratedUrl(URL.createObjectURL(file));
-    }, 2000);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      setPreviewUrl(reader.result);
+      setLoading(true);
+
+      try {
+        const response = await axios.post(
+          "https://api.replicate.com/v1/predictions",
+          {
+            version: "cbf361e0c1304d4695e3511aa4cc9739a421528aa2b86e7517e8cdbb6c0d60c0", // Cartoon GAN
+            input: {
+              image: reader.result,
+            },
+          },
+          {
+            headers: {
+              Authorization: `Token ${import.meta.env.VITE_REPLICATE_API_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        const statusUrl = response.data.urls.get;
+
+        let output;
+        while (!output) {
+          const statusRes = await axios.get(statusUrl, {
+            headers: {
+              Authorization: `Token ${import.meta.env.VITE_REPLICATE_API_TOKEN}`,
+            },
+          });
+          if (statusRes.data.status === "succeeded") {
+            output = statusRes.data.output;
+            setGeneratedUrl(output);
+          } else if (statusRes.data.status === "failed") {
+            throw new Error("Generering feilet");
+          }
+          await new Promise((res) => setTimeout(res, 1000));
+        }
+      } catch (err) {
+        alert("Feil under generering: " + err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    reader.readAsDataURL(file);
   }
 
   return (
     <main style={{ maxWidth: "500px", margin: "0 auto", padding: "2rem" }}>
-      <h1 style={{ textAlign: "center" }}>DollifyMe</h1>
-      <p style={{ textAlign: "center" }}>Gjør deg selv om til en dukke – magisk bildeopplevelse!</p>
+      <h1 style={{ textAlign: "center" }}>DollifyMe – AI Dukkeversjon</h1>
 
-      <div style={{ marginBottom: "1rem", marginTop: "2rem" }}>
-        <h2>Last opp bilde:</h2>
-        <input type="file" accept="image/*" onChange={handleImageUpload} />
-      </div>
+      <input type="file" accept="image/*" onChange={handleImageUpload} />
 
       {previewUrl && (
-        <div>
+        <div style={{ marginTop: "1rem" }}>
           <p>Originalt bilde:</p>
-          <img src={previewUrl} alt="Forhåndsvisning" style={{ maxWidth: "100%", borderRadius: "8px" }} />
+          <img src={previewUrl} alt="Preview" style={{ maxWidth: "100%" }} />
         </div>
       )}
 
+      {loading && <p>Genererer dukkeversjon...</p>}
+
       {generatedUrl && (
         <div style={{ marginTop: "1rem" }}>
-          <p>Dukkeversjon (simulert):</p>
-          <img src={generatedUrl} alt="Dukkeversjon" style={{ maxWidth: "100%", border: "1px solid #ccc", borderRadius: "8px" }} />
+          <p>Dukkeversjon (AI):</p>
+          <img src={generatedUrl} alt="Generated" style={{ maxWidth: "100%", borderRadius: "10px" }} />
         </div>
       )}
     </main>
